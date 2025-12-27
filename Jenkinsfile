@@ -6,7 +6,8 @@ pipeline {
   }
 
   environment {
-    DOCKERHUB_REPO = "yourdockerhubuser/yourapp"
+    REGISTRY       = "docker.io"
+    DOCKERHUB_REPO = "ashutosh1993/node-test"
     RELEASE_NAME   = "myapp"
     NAMESPACE      = "myapp"
     CHART_DIR      = "helm/myapp"
