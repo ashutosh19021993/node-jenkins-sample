@@ -11,8 +11,8 @@ spec:
   serviceAccountName: jenkins
   containers:
     - name: kaniko
-      image: gcr.io/kaniko-project/executor:v1.23.2
-      command: ["sh", "-c", "cat"]
+      image: gcr.io/kaniko-project/executor:debug
+      command: ["/busybox/sh", "-c", "cat"]
       tty: true
       volumeMounts:
         - name: docker-config
