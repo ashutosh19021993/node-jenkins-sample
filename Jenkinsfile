@@ -1,21 +1,45 @@
 pipeline {
-  agent any
-
-  options {
-    disableConcurrentBuilds()
+  agent {
+    kubernetes {
+      yaml """
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app: jenkins-kaniko-helm
+spec:
+  serviceAccountName: jenkins
+  containers:
+    - name: kaniko
+      image: gcr.io/kaniko-project/executor:v1.23.2
+      command: ["sh", "-c", "cat"]
+      tty: true
+      volumeMounts:
+        - name: docker-config
+          mountPath: /kaniko/.docker
+    - name: helm-kubectl
+      image: dtzar/helm-kubectl:3.14.2
+      command: ["sh", "-c", "cat"]
+      tty: true
+  volumes:
+    - name: docker-config
+      secret:
+        secretName: dockerhub-creds
+        items:
+          - key: .dockerconfigjson
+            path: config.json
+"""
+    }
   }
 
+  options { disableConcurrentBuilds() }
+
   environment {
-    REGISTRY       = "docker.io"
     DOCKERHUB_REPO = "ashutosh1993/node-test"
     RELEASE_NAME   = "myapp"
     NAMESPACE      = "myapp"
     CHART_DIR      = "helm/myapp"
-    KIND_CLUSTER   = "kind-jenkins"
-    DOCKERHUB_CRED = "dockerhub-creds"
   }
-
-
 
   stages {
     stage("Checkout") {
@@ -40,47 +64,41 @@ pipeline {
       }
     }
 
-    stage("Docker Build") {
+    stage("Build + Push (Kaniko)") {
       steps {
-        sh '''
-          docker version
-          docker build -t ${IMAGE_FULL} .
-        '''
-      }
-    }
-
-    stage("DockerHub Login + Push") {
-      steps {
-        withCredentials([usernamePassword(credentialsId: "${DOCKERHUB_CRED}", usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+        container('kaniko') {
           sh '''
-            echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
-            docker push ${IMAGE_FULL}
+            /kaniko/executor \
+              --context ${WORKSPACE} \
+              --dockerfile ${WORKSPACE}/Dockerfile \
+              --destination ${IMAGE_FULL} \
+              --snapshotMode=redo
           '''
         }
       }
     }
 
-
-
     stage("Helm Deploy") {
       steps {
-        sh '''
-          set -e
-          kubectl get ns ${NAMESPACE} >/dev/null 2>&1 || kubectl create ns ${NAMESPACE}
+        container('helm-kubectl') {
+          sh '''
+            set -e
+            kubectl get ns ${NAMESPACE} >/dev/null 2>&1 || kubectl create ns ${NAMESPACE}
 
-          if [ -f "${CHART_DIR}/Chart.yaml" ]; then
-            helm dependency update ${CHART_DIR} || true
-          fi
+            if [ -f "${CHART_DIR}/Chart.yaml" ]; then
+              helm dependency update ${CHART_DIR} || true
+            fi
 
-          helm upgrade --install ${RELEASE_NAME} ${CHART_DIR} \
-            --namespace ${NAMESPACE} \
-            --set image.repository=${DOCKERHUB_REPO} \
-            --set image.tag=${IMAGE_TAG} \
-            --wait --timeout 5m
+            helm upgrade --install ${RELEASE_NAME} ${CHART_DIR} \
+              --namespace ${NAMESPACE} \
+              --set image.repository=${DOCKERHUB_REPO} \
+              --set image.tag=${IMAGE_TAG} \
+              --wait --timeout 5m
 
-          kubectl get pods -n ${NAMESPACE} -o wide
-          kubectl get svc -n ${NAMESPACE} -o wide
-        '''
+            kubectl get pods -n ${NAMESPACE} -o wide
+            kubectl get svc -n ${NAMESPACE} -o wide
+          '''
+        }
       }
     }
   }
