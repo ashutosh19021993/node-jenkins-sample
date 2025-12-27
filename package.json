@@ -1,0 +1,12 @@
+{
+  "name": "sample-nodejs-app",
+  "version": "1.0.0",
+  "description": "Sample Node.js app for Jenkins + Helm + KIND",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
